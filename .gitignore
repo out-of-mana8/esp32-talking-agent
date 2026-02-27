@@ -1,0 +1,15 @@
+# Build outputs
+firmware/.pio/
+firmware/build/
+
+# IDE
+.vscode/
+*.swp
+.DS_Store
+
+# EasyEDA backup files
+*.bak
+
+# Python
+__pycache__/
+*.pyc

@@ -1,0 +1,16 @@
+Reference,Value,Footprint,Quantity,Description,Manufacturer,MPN,Notes
+U1,ESP32-S3-WROOM-1-N18R8,WROOM,1,MCU Module 18MB Flash 8MB PSRAM,Espressif,ESP32-S3-WROOM-1-N18R8,
+U5/U22,MAX98357AETE+T,TQFN-16,2,I2S Class-D Amplifier 3W,Maxim/Analog,MAX98357AETE+T,
+U14/U15,ICS-43434,LGA-5,2,I2S MEMS Microphone,TDK InvenSense,ICS-43434,
+U16,LSM6DSOXTR,LGA-14,1,6-Axis IMU Accel+Gyro,STMicroelectronics,LSM6DSOXTR,
+U18,MAX17048G+T10,SOT23-5,1,LiPo Fuel Gauge I2C,Maxim/Analog,MAX17048G+T10,
+U9,MCP73831T-2DCI/OT,SOT23-5,1,LiPo Charger 500mA,Microchip,MCP73831T-2DCI/OT,
+U19/U6/U10,TPS22918DBVR,SOT23-5,3,Load Switch 2A,Texas Instruments,TPS22918DBVR,
+Q1,DMG3415U,SOT23,1,P-Ch MOSFET Power Path,Diodes Inc,DMG3415U-7-F,
+Q2,AO3400A,SOT23,1,N-Ch MOSFET Backlight,Alpha & Omega,AO3400A,
+J1,TYPE-C 16PIN 2MD,USB-C,1,USB-C Connector,CNCTech,073,
+D1,YLED0402G,LED_0402,1,Green LED VBUS Indicator,Yamaha,YLED0402G,
+D2/D3,RLSD52A051UC,SOD-323,2,Schottky Diode CC line protection,,RLSD52A051UC,
+R7,39Ω,0402,1,VBUS current limit resistor,,,
+R3/R4,5.1kΩ / 0.1kΩ,0402,2,CC pull-down resistors USB PD,,,Values from schematic
+L1/L2/L3/L4,1uH Ferrite Bead,0402,4,EMI filter speaker outputs,Yageo,YI201209U121-5R0T,
