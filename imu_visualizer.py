@@ -1,15 +1,20 @@
 """
 LSM6DSOX  //  Cyberpunk IMU Visualizer
 pip install pyserial pygame
-python imu_visualizer.py [PORT] [BAUD]
+Serial mode:  python imu_visualizer.py [PORT] [BAUD]
+UDP mode:     python imu_visualizer.py udp [PORT_NUMBER]
 """
-import re, sys, threading, time, math
-import pygame
+import re, sys, threading, time, math, socket
+import pygame, psutil, os
 import serial
 from collections import deque
 
-PORT    = sys.argv[1] if len(sys.argv) > 1 else "COM4"
-BAUD    = int(sys.argv[2]) if len(sys.argv) > 2 else 115200
+_proc = psutil.Process(os.getpid())
+
+UDP_MODE = len(sys.argv) > 1 and sys.argv[1].lower() == "udp"
+UDP_PORT = int(sys.argv[2]) if UDP_MODE and len(sys.argv) > 2 else 4210
+PORT     = sys.argv[1] if not UDP_MODE and len(sys.argv) > 1 else "COM4"
+BAUD     = int(sys.argv[2]) if not UDP_MODE and len(sys.argv) > 2 else 115200
 N       = 400   # rolling sample count
 
 # ── palette ───────────────────────────────────────────────────
@@ -48,47 +53,74 @@ def update_attitude(ax, ay, az, gx, gy, gz):
         attitude['pitch'] = ALPHA*(attitude['pitch'] + gy*dt) + (1-ALPHA)*acc_pitch
         attitude['yaw']  += gz * dt
 
+def _ingest(raw, t0_ref, frames_ref):
+    """Parse one line of CSV and push into shared state. Returns new frame count."""
+    parts = raw.split(',')
+    try:
+        if len(parts) >= 6:
+            vals = [float(x) for x in parts[:6]]
+            tmp  = float(parts[6]) if len(parts) >= 7 else None
+        else:
+            nums = re.findall(r'[+-]?\d+\.\d+', raw)
+            if len(nums) >= 6:
+                vals = [float(x) for x in nums[:6]]
+                tmp  = float(nums[6]) if len(nums) >= 7 else None
+            else:
+                m = re.search(
+                    r'Accel:.*?x=([\d.-]+)\s+y=([\d.-]+)\s+z=([\d.-]+)'
+                    r'.*?Gyro:.*?x=([\d.-]+)\s+y=([\d.-]+)\s+z=([\d.-]+)', raw)
+                if not m: return frames_ref
+                vals = [float(m.group(i)) for i in range(1, 7)]
+                tm2  = re.search(r'Temp:\s*([\d.-]+)', raw)
+                tmp  = float(tm2.group(1)) if tm2 else None
+        update_attitude(*vals)
+        with lock:
+            for k, v in zip(('ax','ay','az','gx','gy','gz'), vals):
+                bufs[k].append(v); latest[k] = v
+            if tmp is not None: latest['temp'] = tmp
+            frames_ref += 1
+            elapsed = time.monotonic() - t0_ref[0]
+            if elapsed >= 0.5:
+                status['hz'] = frames_ref / elapsed
+                frames_ref, t0_ref[0] = 0, time.monotonic()
+    except ValueError:
+        pass
+    return frames_ref
+
 def serial_reader():
     while True:
         try:
             ser = serial.Serial(PORT, BAUD, timeout=0.5)
             with lock: status['conn'] = True
-            t0, frames = time.monotonic(), 0
+            t0, frames = [time.monotonic()], 0
             while True:
                 raw = ser.readline().decode('utf-8', errors='ignore').strip()
-                try:
-                    parts = raw.split(',')
-                    if len(parts) == 6:
-                        vals = list(map(float, parts)); tmp = None
-                    else:
-                        nums = re.findall(r'[+-]?\d+\.\d+', raw)
-                        if len(nums) >= 6:
-                            vals = [float(x) for x in nums[:6]]
-                            tmp  = float(nums[6]) if len(nums) >= 7 else None
-                        else:
-                            m = re.search(
-                                r'Accel:.*?x=([\d.-]+)\s+y=([\d.-]+)\s+z=([\d.-]+)'
-                                r'.*?Gyro:.*?x=([\d.-]+)\s+y=([\d.-]+)\s+z=([\d.-]+)', raw)
-                            if not m: continue
-                            vals = [float(m.group(i)) for i in range(1, 7)]
-                            tm2  = re.search(r'Temp:\s*([\d.-]+)', raw)
-                            tmp  = float(tm2.group(1)) if tm2 else None
-                    update_attitude(*vals)
-                    with lock:
-                        for k, v in zip(('ax','ay','az','gx','gy','gz'), vals):
-                            bufs[k].append(v); latest[k] = v
-                        if tmp is not None: latest['temp'] = tmp
-                        frames += 1
-                        elapsed = time.monotonic() - t0
-                        if elapsed >= 0.5:
-                            status['hz'] = frames / elapsed
-                            frames, t0 = 0, time.monotonic()
-                except ValueError: pass
+                frames = _ingest(raw, t0, frames)
         except serial.SerialException:
             with lock: status['conn'] = False
             time.sleep(1)
 
-threading.Thread(target=serial_reader, daemon=True).start()
+def udp_reader():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(('', UDP_PORT))
+    sock.settimeout(2.0)
+    print(f"[UDP] Listening on port {UDP_PORT}")
+    t0, frames = [time.monotonic()], 0
+    while True:
+        try:
+            data, _ = sock.recvfrom(256)
+            with lock:
+                status['conn'] = True
+            raw = data.decode('utf-8', errors='ignore').strip()
+            frames = _ingest(raw, t0, frames)
+        except socket.timeout:
+            with lock: status['conn'] = False
+
+if UDP_MODE:
+    threading.Thread(target=udp_reader,  daemon=True).start()
+else:
+    threading.Thread(target=serial_reader, daemon=True).start()
 
 # ── pygame ────────────────────────────────────────────────────
 pygame.init()
@@ -348,10 +380,13 @@ while running:
     pygame.draw.rect(screen, (6,6,18), (0, bar_y, W, BAR_H))
     pygame.draw.line(screen, BORDER,   (0, bar_y), (W, bar_y))
 
+    mode_str = f"UDP :{UDP_PORT}" if UDP_MODE else f"SERIAL {PORT}"
+    mode_col = (100, 180, 255) if UDP_MODE else (180, 255, 100)
     dot = (0,255,100) if is_conn else (255,50,50)
     pygame.draw.circle(screen, dot, (16, bar_y + BAR_H//2), 5)
-    screen.blit(font_m.render(PORT if is_conn else "WAITING", True, dot), (28, bar_y+13))
-    screen.blit(font_m.render(f"{cur_hz:.0f} Hz",             True, DIM), (130, bar_y+13))
+    screen.blit(font_m.render(mode_str,        True, mode_col), (28,  bar_y+13))
+    screen.blit(font_m.render("●" if is_conn else "○", True, dot), (28 + font_m.size(mode_str)[0] + 6, bar_y+13))
+    screen.blit(font_m.render(f"{cur_hz:.0f} Hz", True, DIM), (190, bar_y+13))
 
     t_col = (255,80,80) if cur['temp'] > 40 else WHITE
     screen.blit(font_m.render(f"TEMP {cur['temp']:.1f}°C", True, t_col), (210, bar_y+13))
@@ -366,7 +401,9 @@ while running:
     ]):
         screen.blit(font_m.render(txt, True, col), (330 + i*155, bar_y+13))
 
-    screen.blit(font_m.render(f"{clock.get_fps():.0f} FPS", True, DIM), (W-70, bar_y+13))
+    ram_mb = _proc.memory_info().rss / 1048576
+    screen.blit(font_m.render(f"{ram_mb:.0f} MB", True, DIM), (W-130, bar_y+13))
+    screen.blit(font_m.render(f"{clock.get_fps():.0f} FPS", True, DIM), (W-68,  bar_y+13))
 
     pygame.display.flip()
     clock.tick(60)

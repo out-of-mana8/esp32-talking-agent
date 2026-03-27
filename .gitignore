@@ -10,6 +10,10 @@ firmware/.pio/
 # EasyEDA backup files
 *.bak
 
+# WiFi credentials / secrets — never commit
+firmware/include/wifi_config.h
+firmware/include/secrets.h
+
 # Python
 __pycache__/
 *.pyc

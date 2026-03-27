@@ -1,150 +1,130 @@
 //
-// mic_test.cpp — ICS-43434 stereo I2S microphone diagnostic
-// Flash with: pio run -e mic-test -t upload
+// mic_test.cpp — ICS-43434 stereo mic capture for ESP32-Voicebox
 //
-// IO6 (MIC_EN) powers the mics via a TPS22918 load switch — driven HIGH here.
-// Both mics share one I2S data line (SD); each drives only its own WS phase:
-//   Mic with SEL=GND  → left  channel (WS = 0)
-//   Mic with SEL=VDD  → right channel (WS = 1)
+// Flash:  pio run -e mic_test -t upload
+// Monitor: pio device monitor -e mic_test   (921600 baud)
 //
-// Output CSV every ~20 ms: rms_l,rms_r,peak_l,peak_r  (normalised 0..1)
+// On boot, prompts:
+//   [1] Record + dump via USB Serial   → receive with tools/receive_wav.py
+//   [2] Record + serve via WiFi HTTP   → open the printed IP in a browser
+//
+// Audio: 48 kHz · 24-bit · stereo · 5 s
+// Buffer: ~1.37 MB in PSRAM (ps_malloc)
+// I²S driver: ESP-IDF v5 (driver/i2s_std.h)  — needs arduino-esp32 >= 3.0.0
+//
+// Do not include this file from other environments; it defines its own
+// setup() and loop(). The [env:mic_test] build_src_filter isolates it.
 //
 #include <Arduino.h>
-#include <driver/i2s.h>
-#include "config.h"
+#include "mic_audio.h"
+#include "mic_serial.h"
+#include "mic_wifi.h"
 
-// ── I2S config ────────────────────────────────────────────────
-#define I2S_PORT        I2S_NUM_0
-#define SAMPLE_RATE     16000
-#define FRAMES_PER_READ 320    // 320 frames @ 16 kHz = 20 ms → 50 Hz serial rate
-#define DMA_BUF_COUNT   4
-#define DMA_BUF_FRAMES  FRAMES_PER_READ
+// ── State ─────────────────────────────────────────────────────
+static enum { WAITING, RECORDING, TRANSFERRING } _state = WAITING;
+static char _choice = 0;
 
-// Interleaved stereo buffer: [ch0_0, ch1_0, ch0_1, ch1_1, ...]
-// ch0 = left  channel (WS=0 phase)
-// ch1 = right channel (WS=1 phase)
-static int32_t dma[FRAMES_PER_READ * 2];
-
-// ── helpers ───────────────────────────────────────────────────
-static void printBar(float norm, uint8_t width = 28) {
-    int fill = (int)(norm * width);
-    Serial.print('[');
-    for (int i = 0; i < width; i++) Serial.print(i < fill ? '#' : ' ');
-    Serial.print(']');
+// ── Helpers ───────────────────────────────────────────────────
+static void print_menu() {
+    Serial.println();
+    Serial.println("=== mic_test ===");
+    Serial.printf ("  Sample rate : %d Hz\n",        MIC_SAMPLE_RATE);
+    Serial.printf ("  Bit depth   : %d-bit stereo\n", MIC_BITS_PER_SAMPLE);
+    Serial.printf ("  Duration    : %d s\n",          MIC_REC_SECONDS);
+    Serial.printf ("  Buffer      : %.2f MB PSRAM\n",
+                   (float)WAV_TOTAL_BYTES / (1024.0f * 1024.0f));
+    Serial.println();
+    Serial.println("[1] Record + dump via USB Serial");
+    Serial.println("[2] Record + serve via WiFi HTTP");
+    Serial.println();
+    Serial.print  ("Enter choice: ");
+    _state = WAITING;
 }
 
 // ── setup ─────────────────────────────────────────────────────
 void setup() {
-    Serial.begin(115200);
-    delay(300);
+    Serial.begin(921600);
+    delay(200);
 
-    Serial.println("=========================================");
-    Serial.println("  ICS-43434  Stereo Mic  Diagnostic");
-    Serial.println("=========================================");
-    Serial.printf("  MIC_EN  : GPIO%-2d  (HIGH → load switch ON)\n", PIN_MIC_EN);
-    Serial.printf("  SCK     : GPIO%-2d\n", PIN_I2S_MIC_SCK);
-    Serial.printf("  SD      : GPIO%-2d\n", PIN_I2S_MIC_SD);
-    Serial.printf("  WS/LR   : GPIO%-2d\n", PIN_I2S_MIC_WS);
-    Serial.printf("  Rate    : %d Hz,  20 ms blocks\n", SAMPLE_RATE);
-    Serial.println("=========================================\n");
+    pinMode(PIN_LED_1, OUTPUT);
+    pinMode(PIN_LED_2, OUTPUT);
+    digitalWrite(PIN_LED_1, LOW);
+    digitalWrite(PIN_LED_2, LOW);
 
-    // ── power on mics ─────────────────────────────────────────
-    pinMode(PIN_MIC_EN, OUTPUT);
-    digitalWrite(PIN_MIC_EN, HIGH);
-    delay(30);   // ICS-43434 startup time ≤ 10 ms; give a bit extra
-    Serial.println("[MIC] Load switch ON — mics powered");
-
-    // ── I2S driver install ────────────────────────────────────
-    const i2s_config_t cfg = {
-        .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-        .sample_rate          = SAMPLE_RATE,
-        .bits_per_sample      = I2S_BITS_PER_SAMPLE_32BIT,
-        .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count        = DMA_BUF_COUNT,
-        .dma_buf_len          = DMA_BUF_FRAMES,
-        .use_apll             = false,
-        .tx_desc_auto_clear   = false,
-        .fixed_mclk           = 0,
-    };
-
-    const i2s_pin_config_t pins = {
-        .mck_io_num   = I2S_PIN_NO_CHANGE,
-        .bck_io_num   = PIN_I2S_MIC_SCK,
-        .ws_io_num    = PIN_I2S_MIC_WS,
-        .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num  = PIN_I2S_MIC_SD,
-    };
-
-    esp_err_t err = i2s_driver_install(I2S_PORT, &cfg, 0, NULL);
-    if (err != ESP_OK) {
-        Serial.printf("[MIC] ERROR: i2s_driver_install failed (0x%x)\n", err);
-        while (1) delay(100);
-    }
-
-    err = i2s_set_pin(I2S_PORT, &pins);
-    if (err != ESP_OK) {
-        Serial.printf("[MIC] ERROR: i2s_set_pin failed (0x%x)\n", err);
-        while (1) delay(100);
-    }
-
-    i2s_zero_dma_buffer(I2S_PORT);
-    Serial.println("[MIC] I2S running\n");
-    Serial.println("--- CSV: rms_l,rms_r,peak_l,peak_r  (0..1 normalised) ---");
+    print_menu();
 }
 
 // ── loop ──────────────────────────────────────────────────────
-static uint32_t block = 0;
-
 void loop() {
-    size_t bytes_read = 0;
-    i2s_read(I2S_PORT, dma, sizeof(dma), &bytes_read, portMAX_DELAY);
+    if (_state != WAITING) return;
+    if (!Serial.available()) return;
 
-    int n = (int)(bytes_read / sizeof(int32_t));
+    char c = Serial.read();
+    if (c != '1' && c != '2') return;
 
-    double sum_r = 0, sum_l = 0;
-    int32_t pk_r = 0,  pk_l = 0;
-    int count = 0;
+    _choice = c;
+    Serial.println(c);  // echo
 
-    for (int i = 0; i + 1 < n; i += 2) {
-        // ICS-43434: 24-bit value left-justified in 32-bit word → shift right 8
-        int32_t s_l = (int32_t)dma[i]   >> 8;   // ch0 (left,  WS=0)
-        int32_t s_r = (int32_t)dma[i+1] >> 8;   // ch1 (right, WS=1)
-
-        sum_r += (double)s_r * s_r;
-        sum_l += (double)s_l * s_l;
-
-        int32_t ar = abs(s_r), al = abs(s_l);
-        if (ar > pk_r) pk_r = ar;
-        if (al > pk_l) pk_l = al;
-        count++;
+    // ── Record ────────────────────────────────────────────────
+    if (!mic_audio_init()) {
+        Serial.println("[MIC] I²S init failed — check wiring and PSRAM");
+        print_menu();
+        return;
     }
 
-    if (count < 1) return;
+    digitalWrite(PIN_LED_2, HIGH);   // LED2 solid = recording in progress
+    MicBuf buf = mic_record();
+    digitalWrite(PIN_LED_2, LOW);
 
-    const double SCALE = 1.0 / (double)(1 << 23);   // normalise 24-bit peak to 0..1
-    float rms_r = (float)(sqrt(sum_r / count) * SCALE);
-    float rms_l = (float)(sqrt(sum_l / count) * SCALE);
-    float peak_r = (float)(pk_r * SCALE);
-    float peak_l = (float)(pk_l * SCALE);
+    mic_audio_deinit();              // stop I²S and cut mic power rail
 
-    // CSV for visualiser
-    Serial.printf("%.5f,%.5f,%.5f,%.5f\n", rms_l, rms_r, peak_l, peak_r);
+    if (!buf.data) {
+        Serial.println("[MIC] Recording failed — PSRAM allocation error?");
+        print_menu();
+        return;
+    }
 
-    // Every 25 blocks (~0.5 s) also print a human-readable summary
-    block++;
-    if (block % 25 == 0) {
-        // convert to dBFS
-        float db_l = (rms_l > 0) ? 20.0f * log10f(rms_l) : -99.0f;
-        float db_r = (rms_r > 0) ? 20.0f * log10f(rms_r) : -99.0f;
+    // ── Transfer ──────────────────────────────────────────────
+    if (_choice == '1') {
+        // Option 1: binary dump over USB CDC Serial.
+        // tools/receive_wav.py stays connected through the whole session
+        // (menu + recording + dump) so no separate prompt is needed.
+        mic_serial_dump(&buf);
+        free(buf.data);
+        buf.data = nullptr;
+        print_menu();
 
-        Serial.printf("\n  L  %+6.1f dBFS  ", db_l);
-        printBar(fminf(rms_l * 10.0f, 1.0f));
-        Serial.printf("  %s\n", db_l > -60.0f ? "OK" : "SILENT");
+    } else {
+        // Option 2: WiFi HTTP.
+        // mic_wifi_serve blocks until the user clicks Re-record in the browser,
+        // then returns so we can record again without rebooting.
+        while (true) {
+            mic_wifi_serve(&buf);
 
-        Serial.printf("  R  %+6.1f dBFS  ", db_r);
-        printBar(fminf(rms_r * 10.0f, 1.0f));
-        Serial.printf("  %s\n\n", db_r > -60.0f ? "OK" : "SILENT");
+            // Re-record was requested — overwrite the existing buffer.
+            // mic_audio_deinit() already ran; re-init for a fresh take.
+            if (!mic_audio_init()) {
+                Serial.println("[MIC] I²S re-init failed");
+                break;
+            }
+
+            digitalWrite(PIN_LED_2, HIGH);
+            MicBuf new_buf = mic_record();
+            digitalWrite(PIN_LED_2, LOW);
+
+            mic_audio_deinit();
+
+            // Swap: free the old PSRAM buffer, use the new one.
+            free(buf.data);
+            buf = new_buf;
+
+            if (!buf.data) {
+                Serial.println("[MIC] Re-recording failed");
+                break;
+            }
+        }
+
+        if (buf.data) free(buf.data);
+        print_menu();
     }
 }
