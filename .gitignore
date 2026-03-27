@@ -1,6 +1,6 @@
-# Build outputs
+# PlatformIO build outputs
+.pio/
 firmware/.pio/
-firmware/build/
 
 # IDE
 .vscode/
