@@ -207,9 +207,9 @@ void loop() {
             Serial.printf("  AX "); printBar(ax, 20); Serial.printf(" %+6.2f m/s²\n", ax);
             Serial.printf("  AY "); printBar(ay, 20); Serial.printf(" %+6.2f m/s²\n", ay);
             Serial.printf("  AZ "); printBar(az, 20); Serial.printf(" %+6.2f m/s²\n", az);
-            Serial.printf("  GX "); printBar(gx,  8); Serial.printf(" %+6.3f rad/s\n", gx);
-            Serial.printf("  GY "); printBar(gy,  8); Serial.printf(" %+6.3f rad/s\n", gy);
-            Serial.printf("  GZ "); printBar(gz,  8); Serial.printf(" %+6.3f rad/s\n", gz);
+            Serial.printf("  GX "); printBar(gx, 8.73f); Serial.printf(" %+6.3f rad/s\n", gx);
+            Serial.printf("  GY "); printBar(gy, 8.73f); Serial.printf(" %+6.3f rad/s\n", gy);
+            Serial.printf("  GZ "); printBar(gz, 8.73f); Serial.printf(" %+6.3f rad/s\n", gz);
             Serial.printf("  INT1=%d  INT2=%d\n\n",
                           digitalRead(PIN_IMU_INT1), digitalRead(PIN_IMU_INT2));
         }
