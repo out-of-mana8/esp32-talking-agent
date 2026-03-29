@@ -1,7 +1,7 @@
 #pragma once
 
 // ─────────────────────────────────────────────
-//  ESP32-Voicebox Pin Configuration
+//  ESP32 Talking Agent Pin Configuration
 //  GPIO assignments from PINMUX.md
 // ─────────────────────────────────────────────
 

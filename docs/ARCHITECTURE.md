@@ -2,7 +2,7 @@
 
 ## Overview
 
-ESP32-Voicebox is a self-contained voice interface platform. This document covers the key architectural choices made during design.
+ESP32 Talking Agent is a self-contained voice interface platform. This document covers the key architectural choices made during design.
 
 ---
 

@@ -1,0 +1,16 @@
+#pragma once
+
+// ── WiFi credentials ──────────────────────────────────────────
+// Copy this file to wifi_config.h and fill in your values.
+// wifi_config.h is gitignored — never commit credentials.
+#define WIFI_SSID      "your_network"
+#define WIFI_PASSWORD  "your_password"
+
+// ── Server ────────────────────────────────────────────────────
+// LAN IP of the machine running server/main.py
+// Find it with: ipconfig (Windows) or ip a (Linux/Mac)
+#define SERVER_IP    "192.168.x.x"
+#define SERVER_PORT  8765
+
+// UDP port the ESP32 broadcasts IMU data on (imu-test env)
+#define IMU_UDP_PORT  4210

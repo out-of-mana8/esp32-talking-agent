@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ESP32 Talking Agent</title>
+<style>
+/* ── Reset ────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:         #0f0f0f;
+  --surface:    #1a1a1a;
+  --surface-2:  #222;
+  --border:     #2e2e2e;
+  --text:       #e0e0e0;
+  --muted:      #666;
+  --dim:        #333;
+
+  --c-listening:    #3b82f6;
+  --c-transcribing: #eab308;
+  --c-thinking:     #a855f7;
+  --c-speaking:     #22c55e;
+  --c-disconnected: #444;
+
+  --bubble-you:     #1c1c1c;
+  --bubble-agent:   #1e1a23;
+  --border-you:     #2a2a2a;
+  --border-agent:   #2d2535;
+
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  --font-ui:   'Inter', system-ui, -apple-system, sans-serif;
+  --topbar-h:  52px;
+  --botbar-h:  46px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+/* ── Top bar ──────────────────────────────────────────── */
+#topbar {
+  flex-shrink: 0;
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+#title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+#badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  transition: border-color 0.25s;
+}
+
+#dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-disconnected);
+  flex-shrink: 0;
+  transition: background 0.25s;
+}
+
+#state-text {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-disconnected);
+  min-width: 88px;
+  transition: color 0.25s;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.4; transform: scale(0.85); }
+}
+@keyframes pulse-fast {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.3; transform: scale(0.8);  }
+}
+#dot.pulse      { animation: pulse      1.6s ease-in-out infinite; }
+#dot.pulse-fast { animation: pulse-fast 0.7s ease-in-out infinite; }
+
+/* ── Transcript ───────────────────────────────────────── */
+#transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 0 16px;
+  scroll-behavior: smooth;
+}
+
+#transcript::-webkit-scrollbar       { width: 4px; }
+#transcript::-webkit-scrollbar-track { background: transparent; }
+#transcript::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+#messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* Empty state */
+#empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 80px 20px;
+  color: var(--dim);
+  pointer-events: none;
+}
+#empty-icon { font-size: 32px; opacity: 0.4; }
+#empty-text { font-size: 12px; letter-spacing: 0.04em; }
+
+/* Rows */
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.row.you   { align-items: flex-start; }
+.row.agent { align-items: flex-end;   }
+
+.row-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 3px;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.row.agent .row-meta { flex-direction: row-reverse; }
+
+.bubble {
+  max-width: min(520px, 90%);
+  padding: 9px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--border-you);
+  background: var(--bubble-you);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.row.agent .bubble {
+  border-color: var(--border-agent);
+  background: var(--bubble-agent);
+}
+
+/* Blinking cursor while streaming */
+.bubble.streaming::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--muted);
+  animation: blink 0.7s step-end infinite;
+}
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+/* ── Bottom bar ───────────────────────────────────────── */
+#botbar {
+  flex-shrink: 0;
+  height: var(--botbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  user-select: none;
+}
+
+#conn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+#conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+#conn-dot.ok  { background: #22c55e; }
+#conn-dot.err { background: #ef4444; }
+
+#btn-clear {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font: 11px/1 var(--font-ui);
+  padding: 5px 13px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+#btn-clear:hover { border-color: #555; color: var(--text); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <span id="title">ESP32 Talking Agent</span>
+    <div id="badge">
+      <div id="dot"></div>
+      <span id="state-text">DISCONNECTED</span>
+    </div>
+    <div style="width:56px"></div><!-- balance spacer -->
+  </div>
+
+  <div id="transcript">
+    <div id="messages">
+      <div id="empty">
+        <div id="empty-icon">🎙</div>
+        <div id="empty-text">Waiting for a conversation…</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="botbar">
+    <div id="conn">
+      <div id="conn-dot"></div>
+      <span id="conn-label">Disconnected</span>
+    </div>
+    <button id="btn-clear">Clear</button>
+  </div>
+
+</div>
+<script>
+'use strict';
+
+// ── Config ──────────────────────────────────────────────
+const WS_URL       = `ws://${location.hostname || 'localhost'}:8765/ui`;
+const RECONNECT_MS = 2000;
+
+// ── State metadata ──────────────────────────────────────
+const STATES = {
+  listening:    { label: 'LISTENING',    color: 'var(--c-listening)',    anim: 'pulse'      },
+  transcribing: { label: 'TRANSCRIBING', color: 'var(--c-transcribing)', anim: null         },
+  thinking:     { label: 'THINKING',     color: 'var(--c-thinking)',     anim: null         },
+  speaking:     { label: 'SPEAKING',     color: 'var(--c-speaking)',     anim: 'pulse-fast' },
+  disconnected: { label: 'DISCONNECTED', color: 'var(--c-disconnected)', anim: null         },
+};
+
+// ── DOM refs ────────────────────────────────────────────
+const dot        = document.getElementById('dot');
+const stateText  = document.getElementById('state-text');
+const badge      = document.getElementById('badge');
+const connDot    = document.getElementById('conn-dot');
+const connLabel  = document.getElementById('conn-label');
+const messages   = document.getElementById('messages');
+const emptyEl    = document.getElementById('empty');
+const transcript = document.getElementById('transcript');
+const btnClear   = document.getElementById('btn-clear');
+
+// ── State ───────────────────────────────────────────────
+let activeBubble   = null;   // <div class="bubble streaming"> being filled
+let ws             = null;
+let reconnectTimer = null;
+
+// ── Badge ───────────────────────────────────────────────
+function setDeviceState(state) {
+  const meta = STATES[state] || STATES.disconnected;
+  stateText.textContent  = meta.label;
+  stateText.style.color  = meta.color;
+  dot.style.background   = meta.color;
+  badge.style.borderColor = (state === 'disconnected') ? 'var(--border)'
+                                                        : meta.color + '55';
+  dot.classList.remove('pulse', 'pulse-fast');
+  if (meta.anim) dot.classList.add(meta.anim);
+}
+
+// ── Connection status ────────────────────────────────────
+function setConnected(ok) {
+  connDot.className  = ok ? 'ok' : 'err';
+  connLabel.textContent = ok ? 'Connected' : 'Disconnected';
+}
+
+// ── Helpers ─────────────────────────────────────────────
+function ts() {
+  return new Date().toLocaleTimeString([], {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
+function hideEmpty() {
+  if (emptyEl) emptyEl.style.display = 'none';
+}
+
+function scrollBottom() {
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+function finaliseActiveBubble() {
+  if (!activeBubble) return;
+  activeBubble.classList.remove('streaming');
+  activeBubble = null;
+}
+
+// ── Transcript builders ─────────────────────────────────
+function addUserBubble(text) {
+  finaliseActiveBubble();
+  hideEmpty();
+  const row  = document.createElement('div');
+  row.className = 'row you';
+  row.innerHTML = `
+    <div class="row-meta"><span>🎙</span><span>You · ${ts()}</span></div>
+    <div class="bubble"></div>`;
+  row.querySelector('.bubble').textContent = text;
+  messages.appendChild(row);
+  scrollBottom();
+}
+
+function ensureAgentBubble() {
+  if (activeBubble) return;
+  hideEmpty();
+  const row = document.createElement('div');
+  row.className = 'row agent';
+  row.innerHTML = `
+    <div class="row-meta"><span>Agent · ${ts()}</span><span>✦</span></div>
+    <div class="bubble streaming"></div>`;
+  activeBubble = row.querySelector('.bubble');
+  messages.appendChild(row);
+}
+
+function appendToken(token) {
+  ensureAgentBubble();
+  // Append token text node directly — no innerHTML, no reflow flicker.
+  activeBubble.appendChild(document.createTextNode(token));
+  scrollBottom();
+}
+
+// ── Event dispatch ──────────────────────────────────────
+function handleEvent(msg) {
+  switch (msg.event) {
+
+    case 'state':
+      setDeviceState(msg.state);
+      // A new listening cycle means the assistant turn is done.
+      if (msg.state === 'listening') finaliseActiveBubble();
+      break;
+
+    case 'transcript':
+      addUserBubble(msg.text);
+      break;
+
+    case 'llm_token':
+      appendToken(msg.token);
+      break;
+
+    case 'llm_sentence':
+      // Tokens already handle rendering — no-op.
+      break;
+
+    default:
+      console.warn('[ws] unknown event:', msg.event, msg);
+  }
+}
+
+// ── WebSocket ────────────────────────────────────────────
+function connect() {
+  clearTimeout(reconnectTimer);
+  ws = new WebSocket(WS_URL);
+
+  ws.addEventListener('open', () => {
+    setConnected(true);
+    console.log('[ws] connected to', WS_URL);
+  });
+
+  ws.addEventListener('close', () => {
+    setConnected(false);
+    setDeviceState('disconnected');
+    finaliseActiveBubble();
+    console.log(`[ws] closed — retrying in ${RECONNECT_MS} ms`);
+    reconnectTimer = setTimeout(connect, RECONNECT_MS);
+  });
+
+  ws.addEventListener('error', e => console.warn('[ws] error', e));
+
+  ws.addEventListener('message', ({ data }) => {
+    let msg;
+    try { msg = JSON.parse(data); }
+    catch { console.warn('[ws] bad JSON:', data); return; }
+    handleEvent(msg);
+  });
+}
+
+// ── Clear ───────────────────────────────────────────────
+btnClear.addEventListener('click', () => {
+  finaliseActiveBubble();
+  while (messages.firstChild) messages.removeChild(messages.firstChild);
+
+  const ph = document.createElement('div');
+  ph.id = 'empty';
+  ph.style.cssText = 'display:flex;flex-direction:column;align-items:center;'
+    + 'justify-content:center;gap:8px;padding:80px 20px;color:var(--dim);pointer-events:none;';
+  ph.innerHTML = '<div style="font-size:32px;opacity:.4">🎙</div>'
+    + '<div style="font-size:12px;letter-spacing:.04em">Waiting for a conversation…</div>';
+  messages.appendChild(ph);
+});
+
+// ── Boot ────────────────────────────────────────────────
+setDeviceState('disconnected');
+setConnected(false);
+connect();
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 //
-// mic_test.cpp — ICS-43434 stereo mic capture for ESP32-Voicebox
+// mic_test.cpp — ICS-43434 stereo mic capture for ESP32 Talking Agent
 //
 // Flash:  pio run -e mic_test -t upload
 // Monitor: pio device monitor -e mic_test   (921600 baud)
