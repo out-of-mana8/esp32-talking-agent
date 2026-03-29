@@ -2,7 +2,7 @@
 
 # ESP32 Talking Agent
 
-**A battery-powered voice assistant — speak to it, it thinks, it speaks back.**
+**Battery-powered ESP32-S3 voice assistant — streams mic audio to a Python server, transcribes with Whisper, replies via Claude, speaks back with kokoro TTS.**
 
 ESP32-S3 · Stereo I²S Audio · TFT Display · 6-axis IMU · USB-C · LiPo
 
