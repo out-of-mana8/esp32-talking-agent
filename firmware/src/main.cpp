@@ -26,6 +26,7 @@
 #include <cmath>
 #include "config.h"
 #include "wifi_config.h"   // gitignored — copy from wifi_config.h.example
+#include "health.h"        // device health web dashboard on port 80
 
 // ── Microphone pins (ICS-43434) ───────────────────────────────
 // These match the actual PCB wiring from firmware/include/config.h.
@@ -78,6 +79,7 @@ static QueueHandle_t   s_mic_queue  = nullptr;
 static RingbufHandle_t s_spk_ring   = nullptr;
 static WebSocketsClient webSocket;
 static volatile bool    s_ws_connected = false;
+volatile float          g_mic_rms      = 0.0f;   // updated by mic_task, read by health
 
 // ─────────────────────────────────────────────────────────────
 // WebSocket event handler — called from webSocket.loop()
@@ -275,6 +277,7 @@ static void mic_task(void *arg)
 
         // Normalised RMS: sqrt(mean(s²)) / 32768
         float rms_norm = sqrtf((float)sum_sq / n_mono) / 32768.0f;
+        g_mic_rms = rms_norm;   // expose live RMS to health dashboard
 
         static uint32_t s_rms_count = 0;
         if (++s_rms_count % 50 == 0)
@@ -362,10 +365,14 @@ void setup()
 
     wifi_connect();
 
-    if (!mic_init() || !spk_init()) {
+    bool mic_ok = mic_init();
+    bool spk_ok = spk_init();
+    if (!mic_ok || !spk_ok) {
         Serial.println("[BOOT] I²S init failed — halting");
         while (true) delay(1000);
     }
+
+    health_init(mic_ok, spk_ok);
 
     // Speaker ring buffer — 2 s at 24 kHz 16-bit = 96 kB.
     // Large enough to hold a full TTS sentence without dropping.
@@ -401,6 +408,8 @@ void setup()
 
 void loop()
 {
+    health_update(s_ws_connected, g_mic_rms);
+
     // Drive WebSocket state machine (handles connect, ping/pong, callbacks).
     webSocket.loop();
 

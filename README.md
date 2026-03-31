@@ -6,7 +6,8 @@
 
 ESP32-S3 · Stereo I²S Audio · TFT Display · 6-axis IMU · USB-C · LiPo
 
-[![PCB](https://img.shields.io/badge/PCB-v1.0-00f0c8?style=flat-square)](hardware/)
+[![PCB](https://img
+.shields.io/badge/PCB-v1.0-00f0c8?style=flat-square)](hardware/)
 [![MCU](https://img.shields.io/badge/MCU-ESP32--S3-e03030?style=flat-square)](https://www.espressif.com/en/products/socs/esp32-s3)
 [![Framework](https://img.shields.io/badge/framework-Arduino%20%2F%20ESP--IDF-orange?style=flat-square)](https://platformio.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
