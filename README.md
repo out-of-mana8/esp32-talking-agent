@@ -6,8 +6,7 @@
 
 ESP32-S3 · Stereo I²S Audio · TFT Display · 6-axis IMU · USB-C · LiPo
 
-[![PCB](https://img
-.shields.io/badge/PCB-v1.0-00f0c8?style=flat-square)](hardware/)
+[![PCB](https://img.shields.io/badge/PCB-v1.0-00f0c8?style=flat-square)](hardware/)
 [![MCU](https://img.shields.io/badge/MCU-ESP32--S3-e03030?style=flat-square)](https://www.espressif.com/en/products/socs/esp32-s3)
 [![Framework](https://img.shields.io/badge/framework-Arduino%20%2F%20ESP--IDF-orange?style=flat-square)](https://platformio.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
@@ -192,7 +191,13 @@ The Whisper model downloads automatically from HuggingFace on first run.
 
 ### 4 · Flash firmware
 
-Edit the top of [firmware/src/main.cpp](firmware/src/main.cpp) with your network credentials and server IP:
+Copy the credentials template and fill in your values:
+
+```bash
+cp firmware/include/wifi_config.h.example firmware/include/wifi_config.h
+```
+
+Edit `firmware/include/wifi_config.h`:
 
 ```cpp
 #define WIFI_SSID      "your_network"
@@ -234,6 +239,12 @@ Navigate to **http://localhost:8080** in a browser.
 
 The status badge will show **disconnected** until the ESP32 connects, then switch to **listening**. Speak — the badge cycles through **transcribing → thinking → speaking** as the pipeline runs.
 
+### 7 · Device health dashboard
+
+The ESP32 also serves its own status page on port 80. Navigate to the device's IP address in a browser (printed in serial output at boot as `[HEALTH] Dashboard → http://x.x.x.x/`).
+
+The dashboard shows battery state of charge, voltage, and charge/discharge status from the MAX17048 fuel gauge; live IMU readings from the LSM6DSOX; load switch states; microphone and speaker status; live mic RMS level; and system info (WiFi RSSI, free heap, uptime). Updates every 3 seconds. Runs independently of the voice pipeline.
+
 ---
 
 ## Environment variables
@@ -258,6 +269,8 @@ The status badge will show **disconnected** until the ESP32 connects, then switc
 `mic_task` (core 1) reads 512-sample frames from the ICS-43434 via I²S (32-bit stereo, left channel only), applies 30 dB digital gain, computes normalised RMS, and enqueues frames above `MIC_THRESHOLD` into a FreeRTOS queue.
 
 The Arduino `loop()` drives the WebSocket state machine and drains the mic queue, forwarding each frame as a binary WebSocket message to `/device` on the server.
+
+Three status LEDs give a hardware view of pipeline state: LED1 (GPIO 1) is on while I²S is returning mic data; LED2 (GPIO 2) blinks on each frame that clears the VAD gate; LED3 (GPIO 42) is on while the WebSocket connection to the server is active.
 
 When TTS audio arrives as a binary WebSocket message, the `onWsEvent` handler pushes it into a FreeRTOS ring buffer (2 seconds capacity at 24 kHz). `speaker_task` (core 0) drains this buffer and writes PCM to the MAX98357A amplifier via I²S.
 
@@ -324,8 +337,10 @@ esp32-talking-agent/
 │   │   ├── imu_test.cpp      # IMU diagnostic          (env: imu-test)
 │   │   └── mic_test.cpp      # Mic capture + WAV dump  (env: mic_test)
 │   └── include/
-│       ├── config.h          # GPIO assignments
-│       └── mic_audio.h       # I²S init + PSRAM recording
+│       ├── config.h              # GPIO assignments
+│       ├── health.h              # Device health web dashboard (port 80)
+│       ├── mic_audio.h           # I²S init + PSRAM recording
+│       └── wifi_config.h.example # Credentials template (copy → wifi_config.h)
 ├── server/
 │   ├── main.py               # asyncio WebSocket + HTTP server
 │   ├── pipeline.py           # VAD · STT · LLM · TTS
