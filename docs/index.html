@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="ESP32-S3 battery-powered voice assistant — real-time speech to Claude AI and back, on custom hardware.">
+<title>ESP32 Talking Agent</title>
+<style>
+:root {
+  --bg:      #0a0a0a;
+  --surface: #111;
+  --card:    #161616;
+  --border:  #222;
+  --accent:  #00f0c8;
+  --accent2: #3b82f6;
+  --text:    #e5e5e5;
+  --muted:   #666;
+  --ok:      #22c55e;
+  --mono:    'Courier New', Courier, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Nav ── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 32px; height: 56px;
+  background: rgba(10,10,10,.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-logo {
+  font-family: var(--mono);
+  font-size: 13px; color: var(--accent); letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.nav-links { display: flex; gap: 28px; }
+.nav-links a { color: var(--muted); font-size: 13px; }
+.nav-links a:hover { color: var(--text); text-decoration: none; }
+
+/* ── Hero ── */
+.hero {
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+  padding: 80px 24px 60px;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%,
+              rgba(0,240,200,.07) 0%, transparent 70%);
+}
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(0,240,200,.08);
+  border: 1px solid rgba(0,240,200,.2);
+  border-radius: 100px;
+  padding: 4px 14px;
+  font-size: 12px; color: var(--accent);
+  font-family: var(--mono); letter-spacing: 1px;
+  margin-bottom: 28px;
+}
+.hero-badge .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+h1 {
+  font-size: clamp(2.2rem, 6vw, 4rem);
+  font-weight: 700; letter-spacing: -1px;
+  line-height: 1.1; margin-bottom: 20px;
+}
+h1 span { color: var(--accent); }
+.hero-sub {
+  max-width: 560px; color: var(--muted);
+  font-size: clamp(1rem, 2vw, 1.15rem);
+  margin-bottom: 40px;
+}
+.hero-buttons { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 22px; border-radius: 6px;
+  font-size: 14px; font-weight: 500;
+  transition: opacity .15s;
+}
+.btn:hover { opacity: .85; text-decoration: none; }
+.btn-primary {
+  background: var(--accent); color: #000;
+}
+.btn-outline {
+  border: 1px solid var(--border); color: var(--text);
+  background: var(--surface);
+}
+
+/* ── Board image ── */
+.board-wrap {
+  margin-top: 64px;
+  position: relative; display: inline-block;
+}
+.board-wrap img {
+  width: min(560px, 90vw);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 0 80px rgba(0,240,200,.08);
+  display: block;
+}
+
+/* ── Sections ── */
+section { padding: 80px 24px; max-width: 1000px; margin: 0 auto; }
+.section-label {
+  font-size: 11px; font-family: var(--mono);
+  color: var(--accent); letter-spacing: 3px;
+  text-transform: uppercase; margin-bottom: 12px;
+}
+h2 { font-size: clamp(1.6rem, 3vw, 2rem); font-weight: 700; margin-bottom: 8px; }
+.section-sub { color: var(--muted); margin-bottom: 48px; max-width: 560px; }
+hr.divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+/* ── Pipeline ── */
+.pipeline {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 28px 32px;
+  font-family: var(--mono); font-size: 13px; line-height: 2;
+  overflow-x: auto; color: #bbb;
+}
+.pipeline .hl { color: var(--accent); }
+.pipeline .hl2 { color: var(--accent2); }
+.pipeline .muted { color: #444; }
+
+/* ── Latency table ── */
+.latency-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 14px; margin-top: 32px;
+}
+.latency-table th {
+  text-align: left; padding: 8px 12px;
+  font-size: 11px; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.latency-table td {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+}
+.latency-table tr:last-child td {
+  color: var(--accent); font-weight: 600;
+  border-bottom: none;
+}
+.time { font-family: var(--mono); color: var(--accent2); }
+
+/* ── Feature cards ── */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px,1fr)); gap: 16px; }
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 24px;
+  transition: border-color .2s;
+}
+.card:hover { border-color: #333; }
+.card-icon { font-size: 22px; margin-bottom: 14px; }
+.card h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.card p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+/* ── Hardware table ── */
+.hw-table {
+  width: 100%; border-collapse: collapse; font-size: 14px;
+}
+.hw-table th {
+  text-align: left; padding: 8px 12px;
+  font-size: 11px; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.hw-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.hw-table tr:last-child td { border-bottom: none; }
+.hw-table td:first-child { font-family: var(--mono); font-size: 13px; color: var(--accent2); }
+.hw-table td:nth-child(2) { font-weight: 500; }
+.hw-table td:last-child { color: var(--muted); font-size: 13px; }
+
+/* ── Code block ── */
+.code-block {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 20px 24px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.8;
+  overflow-x: auto;
+}
+.code-block .c { color: var(--muted); }
+.code-block .kw { color: var(--accent2); }
+.code-block .str { color: var(--ok); }
+.step-list { list-style: none; counter-reset: steps; }
+.step-list li {
+  counter-increment: steps;
+  display: flex; gap: 16px; align-items: flex-start;
+  padding: 20px 0; border-bottom: 1px solid var(--border);
+}
+.step-list li:last-child { border-bottom: none; }
+.step-num {
+  flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(0,240,200,.1);
+  border: 1px solid rgba(0,240,200,.3);
+  color: var(--accent);
+  font-family: var(--mono); font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+.step-num::before { content: counter(steps); }
+.step-body h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.step-body p { color: var(--muted); font-size: 13px; }
+.step-body code {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 6px;
+  font-family: var(--mono); font-size: 12px;
+  color: var(--accent);
+}
+
+/* ── Layout image ── */
+.layout-img {
+  width: 100%; border-radius: 10px;
+  border: 1px solid var(--border);
+  margin-top: 40px;
+}
+
+/* ── Footer ── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 40px 24px; text-align: center;
+  color: var(--muted); font-size: 13px;
+}
+footer a { color: var(--muted); }
+footer a:hover { color: var(--text); }
+
+/* ── Responsive ── */
+@media(max-width:600px){
+  nav { padding: 0 16px; }
+  .nav-links { gap: 16px; }
+  section { padding: 60px 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <span class="nav-logo">ESP32 Talking Agent</span>
+  <div class="nav-links">
+    <a href="#how-it-works">How it works</a>
+    <a href="#hardware">Hardware</a>
+    <a href="#get-started">Get started</a>
+    <a href="https://github.com/tausifsamin/esp32-talking-agent" target="_blank">GitHub</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-badge">
+    <span class="dot"></span>
+    Working end-to-end
+  </div>
+  <h1>A voice assistant<br>built from <span>scratch</span></h1>
+  <p class="hero-sub">
+    Custom ESP32-S3 hardware that listens, thinks with Claude AI,
+    and speaks back — all over WiFi, on a battery, on a board you can hold in your hand.
+  </p>
+  <div class="hero-buttons">
+    <a class="btn btn-primary" href="https://github.com/tausifsamin/esp32-talking-agent" target="_blank">
+      ★ &nbsp;View on GitHub
+    </a>
+    <a class="btn btn-outline" href="#how-it-works">
+      See how it works →
+    </a>
+  </div>
+
+  <div class="board-wrap">
+    <img src="../img/top.png" alt="ESP32 Talking Agent PCB — top view">
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- How it works -->
+<section id="how-it-works">
+  <div class="section-label">Architecture</div>
+  <h2>How it works</h2>
+  <p class="section-sub">
+    You speak. The device streams raw PCM audio to a local Python server,
+    which transcribes, thinks, synthesises, and sends audio back — all in under two seconds.
+  </p>
+
+  <div class="pipeline">
+<span class="hl">ESP32-S3</span>  <span class="muted">──────────────────────────────────────</span>  <span class="hl2">Python server</span>
+<br>
+mic_task  → I²S RX → 30 dB gain → RMS gate
+          → FreeRTOS queue → <span class="hl">WebSocket /device</span>   → <span class="hl2">VADBuffer</span>
+<span class="muted">                                                         ↓ utterance detected</span>
+                                                     <span class="hl2">faster-whisper</span>  <span class="muted">~300 ms</span>
+<span class="muted">                                                         ↓ transcript</span>
+                                                     <span class="hl2">Claude Sonnet</span>   <span class="muted">streaming</span>
+<span class="muted">                                                         ↓ tokens</span>
+                                                     <span class="hl2">sentence_chunker</span>
+<span class="muted">                                                         ↓ per sentence</span>
+                                                     <span class="hl2">kokoro-onnx TTS</span> <span class="muted">~400 ms</span>
+<span class="muted">                                                         ↓ 24 kHz PCM</span>
+speaker_task ← I²S TX ← ring buffer ← <span class="hl">WebSocket</span>  ←──────────────
+  </div>
+
+  <table class="latency-table">
+    <thead>
+      <tr><th>Stage</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>VAD silence detection</td><td class="time">~700 ms</td></tr>
+      <tr><td>faster-whisper STT (base.en, beam=1)</td><td class="time">~300 ms</td></tr>
+      <tr><td>Claude Sonnet time-to-first-token</td><td class="time">~500 ms</td></tr>
+      <tr><td>First TTS sentence</td><td class="time">~400 ms</td></tr>
+      <tr><td><strong>Total to first audio</strong></td><td class="time">~1.9 s</td></tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:20px;color:var(--muted);font-size:13px;">
+    LLM token generation and TTS synthesis run concurrently via an asyncio queue —
+    sentence N+1 is synthesised while sentence N is playing.
+  </p>
+</section>
+
+<hr class="divider">
+
+<!-- Features -->
+<section id="features">
+  <div class="section-label">Features</div>
+  <h2>What's on board</h2>
+  <p class="section-sub">Everything built into a single custom PCB.</p>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-icon">🎙</div>
+      <h3>Stereo MEMS microphones</h3>
+      <p>Dual ICS-43434 with I²S output, power-gated via TPS22918 load switch. 30 dB digital gain applied in firmware.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔊</div>
+      <h3>Class-D amplifiers</h3>
+      <p>MAX98357A × 2 for stereo output. No I²C configuration needed — direct I²S, 3 W per channel at 4 Ω.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🧠</div>
+      <h3>Claude AI responses</h3>
+      <p>Streaming Anthropic API — first token starts arriving before STT even finishes. Responses begin playing before the full reply is generated.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔋</div>
+      <h3>Battery powered</h3>
+      <p>Single-cell LiPo with MCP73831T USB-C charging and MAX17048 fuel gauge for accurate state-of-charge reporting over I²C.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📐</div>
+      <h3>6-axis IMU</h3>
+      <p>LSM6DSOXTR accelerometer + gyroscope with hardware gesture interrupts and an on-chip ML core for future wake-word or gesture detection.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h3>Live health dashboard</h3>
+      <p>Built-in HTTP server (port 80) served directly from the ESP32 — battery %, IMU readings, load switch states, WiFi RSSI, free heap. Updates every 3 seconds.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🖥</div>
+      <h3>Browser conversation UI</h3>
+      <p>Vanilla JS monitor served by the Python server — streaming token display, pipeline state badge, transcript history. No framework dependencies.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">⚡</div>
+      <h3>8 MB PSRAM</h3>
+      <p>ESP32-S3-WROOM-1 with OPI PSRAM — enough headroom for audio ring buffers, PSRAM-backed WAV capture, and future ML inference.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- Hardware -->
+<section id="hardware">
+  <div class="section-label">Hardware</div>
+  <h2>Bill of materials</h2>
+  <p class="section-sub">Key components on the v1.0 PCB.</p>
+
+  <table class="hw-table">
+    <thead>
+      <tr><th>Subsystem</th><th>Part</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>MCU</td><td>ESP32-S3-WROOM-1</td><td>16 MB Flash · 8 MB OPI PSRAM · 240 MHz dual-core</td></tr>
+      <tr><td>Microphones</td><td>ICS-43434 × 2</td><td>Stereo I²S · 24-bit · 65 dBA SNR · power-gated</td></tr>
+      <tr><td>Amplifiers</td><td>MAX98357A × 2</td><td>Stereo Class-D · 3 W · direct I²S</td></tr>
+      <tr><td>Display</td><td>TFT (SPI)</td><td>PWM backlight · TPS22918 power gate</td></tr>
+      <tr><td>IMU</td><td>LSM6DSOXTR</td><td>6-axis · I²C · HW interrupts · ML core</td></tr>
+      <tr><td>Fuel gauge</td><td>MAX17048</td><td>LiPo SOC · I²C · low-battery alert pin</td></tr>
+      <tr><td>Charger</td><td>MCP73831T</td><td>Single-cell LiPo · USB-C input</td></tr>
+      <tr><td>Power gating</td><td>TPS22918 × 3</td><td>Per-rail switches — mics, display, amps</td></tr>
+    </tbody>
+  </table>
+
+  <img class="layout-img" src="../img/layout.png" alt="PCB layout">
+</section>
+
+<hr class="divider">
+
+<!-- Get started -->
+<section id="get-started">
+  <div class="section-label">Quick start</div>
+  <h2>Get it running</h2>
+  <p class="section-sub">
+    You need Python 3.9+, PlatformIO, and an
+    <a href="https://console.anthropic.com/" target="_blank">Anthropic API key</a>.
+  </p>
+
+  <ol class="step-list">
+    <li>
+      <span class="step-num"></span>
+      <div class="step-body">
+        <h4>Download TTS model files</h4>
+        <p>kokoro-onnx model files are not included in the repo (~170 MB). Download them into <code>server/</code> once.</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-num"></span>
+      <div class="step-body">
+        <h4>Install server dependencies</h4>
+        <p>Create a Python venv and install requirements: <code>python -m venv server/.venv</code> then <code>pip install -r server/requirements.txt</code>. On Linux/Mac, <code>make install</code> does this for you.</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-num"></span>
+      <div class="step-body">
+        <h4>Set your API key</h4>
+        <p>Copy <code>.env.example</code> to <code>.env</code> and add your <code>ANTHROPIC_API_KEY</code>.</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-num"></span>
+      <div class="step-body">
+        <h4>Flash the firmware</h4>
+        <p>Copy <code>wifi_config.h.example</code> to <code>wifi_config.h</code>, fill in your WiFi credentials and server LAN IP, then run <code>pio run -e voicebox -t upload</code>.</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-num"></span>
+      <div class="step-body">
+        <h4>Start the server</h4>
+        <p>Run <code>server/.venv/bin/python server/main.py</code>. Models prewarm at startup — takes ~5 seconds, then it's ready.</p>
+      </div>
+    </li>
+    <li>
+      <span class="step-num"></span>
+      <div class="step-body">
+        <h4>Open the UI and speak</h4>
+        <p>Navigate to <code>http://localhost:8080</code>. When the ESP32 connects, the badge switches to <strong>listening</strong>. Say something.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div style="margin-top:40px;text-align:center;">
+    <a class="btn btn-primary" href="https://github.com/tausifsamin/esp32-talking-agent#quick-start" target="_blank">
+      Full setup guide on GitHub →
+    </a>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- Footer -->
+<footer>
+  <p style="margin-bottom:12px;">
+    <a href="https://github.com/tausifsamin/esp32-talking-agent" target="_blank">GitHub</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/tausifsamin/esp32-talking-agent/blob/main/README.md" target="_blank">Documentation</a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/tausifsamin/esp32-talking-agent/blob/main/LICENSE" target="_blank">MIT License</a>
+  </p>
+  <p>Built by <a href="https://github.com/tausifsamin" target="_blank">tausifsamin</a></p>
+</footer>
+
+</body>
+</html>
