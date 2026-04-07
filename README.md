@@ -13,11 +13,11 @@ ESP32-S3 · Stereo I²S Audio · TFT Display · 6-axis IMU · USB-C · LiPo
 
 <br>
 
-<img src="img/top.png" width="580" alt="ESP32 Talking Agent — front render"/>
+<img src="docs/img/top.png" width="580" alt="ESP32 Talking Agent — front render"/>
 
 <br><br>
 
-<img src="img/layout.png" width="580" alt="PCB layout"/>
+<img src="docs/img/layout.png" width="580" alt="PCB layout"/>
 
 </div>
 
