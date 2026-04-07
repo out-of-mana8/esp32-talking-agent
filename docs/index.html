@@ -289,6 +289,37 @@ h2 {
   opacity: .85;
 }
 
+/* ── PCB specs ── */
+.pcb-specs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 40px;
+}
+.pcb-spec-item {
+  background: var(--card);
+  padding: 20px 16px;
+  text-align: center;
+}
+.pcb-spec-val {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.pcb-spec-lbl {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 /* ── Steps ── */
 .steps { display: flex; flex-direction: column; gap: 0; }
 .step {
@@ -345,6 +376,7 @@ footer a:hover { color: var(--text); }
   .hero-right { display: none; }
   .stats { flex-wrap: wrap; }
   .stat { min-width: 140px; }
+  .pcb-specs { grid-template-columns: repeat(2, 1fr); }
   .pipeline-wrap { grid-template-columns: 1fr; }
   .pipe-arrow { display: none; }
   .section { padding: 72px 24px; }
@@ -640,6 +672,42 @@ footer a:hover { color: var(--text); }
       <div class="hw-sub">Display</div>
       <div class="hw-part">TFT (SPI)</div>
       <div class="hw-note">PWM backlight · power-gated · SPI interface</div>
+    </div>
+  </div>
+
+  <!-- PCB specs -->
+  <div class="pcb-specs">
+    <div class="pcb-spec-item">
+      <div class="pcb-spec-val">86 × 30.3 mm</div>
+      <div class="pcb-spec-lbl">Board size</div>
+    </div>
+    <div class="pcb-spec-item">
+      <div class="pcb-spec-val">2-layer</div>
+      <div class="pcb-spec-lbl">Copper layers</div>
+    </div>
+    <div class="pcb-spec-item">
+      <div class="pcb-spec-val">94</div>
+      <div class="pcb-spec-lbl">Components</div>
+    </div>
+    <div class="pcb-spec-item">
+      <div class="pcb-spec-val">43</div>
+      <div class="pcb-spec-lbl">Unique devices</div>
+    </div>
+    <div class="pcb-spec-item">
+      <div class="pcb-spec-val">354</div>
+      <div class="pcb-spec-lbl">Pads</div>
+    </div>
+    <div class="pcb-spec-item">
+      <div class="pcb-spec-val">158</div>
+      <div class="pcb-spec-lbl">Vias</div>
+    </div>
+    <div class="pcb-spec-item">
+      <div class="pcb-spec-val">68</div>
+      <div class="pcb-spec-lbl">Nets (0 unrouted)</div>
+    </div>
+    <div class="pcb-spec-item">
+      <div class="pcb-spec-val">1841 mm</div>
+      <div class="pcb-spec-lbl">Track length</div>
     </div>
   </div>
 
